@@ -13,17 +13,25 @@ ctypes.windll.kernel32.SetPriorityClass(ctypes.windll.kernel32.GetCurrentProcess
 ############ CONFIG #####################################################################
 #########################################################################################
 
-MY_MP = 80000       # 나의 마력 - 백호의희원 비활성화를 원하는 경우, '0' 입력
+BH_HEAL_INTERVAL = 50   # 백호의희원 간격(초) 비활성화를 원하는 경우, '0' 입력,
+BH2_HEAL_INTERVAL = 50   # 백호의희원'첨 간격(초) 비활성화를 원하는 경우, '0' 입력,
+BH_GAP = BH_HEAL_INTERVAL/2 # 희원과, 희원'첨 사이의 최소 간격
+
+MP_REFILL_FREQ = 50     # 공력증강 간격, 액션 N회 후 공증 1회씩. 마력이 부족하면 숫자를 줄일것. 비활성화를 원하는 경우 '0' (추천값 : 희원보다 작게)
+
+GUMGANG_INTERVAL = 13   # 금강불체 시간간격(추천값:13초). 비활성화를 원하는 경우 '0'
+SHIELD_PROTECT_INTERVAL = 186   # 보호 무장 시간간격(추천값:186초). 비활성화를 원하는 경우 '0'
 
 ## 아래 키들은 반드시 '숫자' 키에 매핑되어 있어야 합니다.
-KEY_HEAL = 3        # 힐 키
+KEY_HEAL = 3        # 기본 힐 키
 KEY_MP_REFILL = 2   # 공력증강 키
-KEY_SP_HEAL = 1     # 백호의희원 키
+KEY_BH_HEAL = 1     # 백호의희원 키
 KEY_GUMGANG = 4     # 금강불체 키
 KEY_HON = 5         # 혼마술키
-KEY_REVIVE=7        # 부활키
 
-## 아래키는 반드시 숫자에 매핑되어 있을필요는 없습니다.
+## 아래키는 반드시 숫자에 매핑되어 있을필요는 없습니다. 단, 소문자에 할당되어야 합니다.
+KEY_BH2_HEAL = "j"     # 백호의희원'첨 키
+KEY_REVIVE="g"        # 부활키
 KEY_MP_INJECTION="i"      # 공력주입 키
 KEY_SHOUT="h"               # 사자후키
 KEY_SHIELD="q"              # 무장 키
@@ -33,15 +41,7 @@ KEY_PROTECT="w"             # 보호 키
 CALL_STRING="중입니다"
 
 
-GUMGANG_INTERVAL = 13   # 금강불체 시간간격, 기본 13초. 비활성화를 원하는 경우 '0'
-SHIELD_PROTECT_INTERVAL = 186   # 보호 무장 시간간격, 기본 13초. 비활성화를 원하는 경우 '0'
-MP_REFILL_FREQ = 11     # 공증을 포함하는 힐 간격, 힐 5 x 11회 이후, 공증 1회씩 하는 빈도. 마력이 부족하면 숫자를 줄일것. 비활성화를 원하는 경우 '0'
-
-
 #########################################################################################
-
-_SP_HEAL_INTERVAL = MY_MP/10000
-
 
 up_pressed = False
 down_pressed = False
@@ -57,12 +57,14 @@ f6_pressed = False
 f7_pressed = False
 f8_pressed = False
 f9_pressed = False
-f10_pressed = False
+f11_pressed = False
+
+grave_pressed = False  # '~' (Grave) 키
+pause_pressed = False
+eat_pressed = False
 
 running = True  # 프로그램 실행 상태
 is_heal_mode=False
-
-
 
 def press_key(hexKeyCode, interval=0.02, subkey=0):
     if subkey!=0:
@@ -75,6 +77,11 @@ def press_key(hexKeyCode, interval=0.02, subkey=0):
         time.sleep(0.02)
         win32api.keybd_event(subkey, 0, win32con.KEYEVENTF_KEYUP, 0)  # Subkey 뗌
         time.sleep(0.02)
+
+def sp_press_key(hexKeyCode):    
+    win32api.keybd_event(hexKeyCode, 0, win32con.KEYEVENTF_KEYUP, 0)  # Key Up
+    time.sleep(0.01)
+    win32api.keybd_event(hexKeyCode, 0, 0, 0)  # Key Down
 
 def right_click():
     win32api.mouse_event(win32con.MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0)  # 우클릭 누름
@@ -90,6 +97,8 @@ def press_valid_key(KeyCode, interval=0.02):
     if 'a' <= KeyCode and KeyCode < 'j':
         recode=0x31+(ord(KeyCode)-ord('a'))
         press_key(recode, interval)
+    elif KeyCode == 'j':
+        press_key(0x30, interval)
     else:
         press_key(0x5A, 0.02, win32con.VK_SHIFT)  # Shift + Z 입력
         time.sleep(0.02)
@@ -113,72 +122,72 @@ def pres_tabtab():
     keyboard.unblock_key("left")
     time.sleep(0.01)
 
-DEFAULT_DELAY=0.04
-def my_action(mode):
-    def _action_heal():
-        press_key(0x30+KEY_HEAL)
-        time.sleep(DEFAULT_DELAY)
-    def _action_diamond():
-        press_key(0x30+KEY_GUMGANG)
-        time.sleep(DEFAULT_DELAY)
-    def _action_mp_refill():
-        press_key(0x30+KEY_MP_REFILL)
-        time.sleep(DEFAULT_DELAY)
 
-############
-
-    def action_diamond(current_action):
-        actions = [_action_diamond, _action_heal, _action_diamond, _action_heal, _action_diamond, _action_heal]
-        actions[current_action]()
+DEFAULT_DELAY=0.05
+class ActionQueue:
+    def __init__(self):
+        self.q = []
         
-    def action_protect(current_action):
-        def action0():
-            press_valid_key(KEY_SHIELD)
-            time.sleep(0.1)
-        def action1():
-            press_valid_key(KEY_PROTECT)
-            time.sleep(0.1)
- 
-        actions = [action0, action1, _action_heal, _action_mp_refill, _action_heal, _action_heal]
-        actions[current_action]()
+    def getCount(self):
+        return len(self.q)
 
-    def action_basic_heal(current_action):
-        actions = [_action_heal, _action_heal, _action_heal, _action_heal, _action_heal, _action_heal]
-        actions[current_action]()
+    def add(self, func):
+        self.q.append(func)
         
-    def action_mp_heal(current_action):
-        actions = [_action_heal, _action_mp_refill, _action_heal, _action_heal, _action_heal, _action_mp_refill]
-        actions[current_action]()
-    
-    def action_sp_heal(current_action):
-        def action0():
-            press_key(0x30+KEY_SP_HEAL)
-            time.sleep(DEFAULT_DELAY)
-        actions = [_action_mp_refill, action0, _action_mp_refill, _action_mp_refill, _action_heal, _action_heal]
-        actions[current_action]()
-    
-    modes = {"diamond":action_diamond,"protect":action_protect,"heal":action_basic_heal,"mpheal":action_mp_heal, "spheal":action_sp_heal}
-    
-    return modes[mode]
+    def do(self):
+        if self.q:
+            item=self.q.pop(0)
+            item()
+        else:
+            #sp_press_key(0x30+KEY_HEAL)
+            press_key(0x30+KEY_HEAL)
+            
+def _action_diamond():
+    press_key(0x30+KEY_GUMGANG)
+def _action_heal():
+    press_key(0x30+KEY_HEAL)
+def _action_diamond():
+    press_key(0x30+KEY_GUMGANG)
+def _action_mp_refill():
+    press_key(0x30+KEY_MP_REFILL)
+def _action_shield():
+    press_valid_key(KEY_SHIELD)
+    time.sleep(0.05)
+def _action_protect():
+    press_valid_key(KEY_PROTECT)
+    time.sleep(0.05)
+def _action_bh_heal():
+    press_key(0x30+KEY_BH_HEAL)
+def _action_bh2_heal():
+    press_valid_key(KEY_BH2_HEAL)
 
 
 def key_loop():
     global running
     global f1_pressed, f2_pressed, f3_pressed, f4_pressed
-    global f5_pressed, f6_pressed, f7_pressed, f8_pressed, f9_pressed
+    global f5_pressed, f6_pressed, f7_pressed, f8_pressed, f9_pressed, f11_pressed
     global up_pressed, down_pressed, right_pressed, left_pressed
+    global grave_pressed , pause_pressed, eat_pressed
+    
     global is_heal_mode
-    heal_mode_cnt=0
-
+    
     last_tick=0
     diamond_tick=0
     protected_tick=0
-    heal_tick=0
-    super_heal_tick=0
-    is_tabtab_restore=False
+    action_tick=0
+    bh_heal_tick=0
+    bh2_heal_tick=0
+    
+    is_tabtab_restore=False   
+    on_pause = False
+    
+    bh_ready_flag=False
+    bh2_ready_flag=False
     
     action_count=0
-    current_mode="heal"
+    total_action_count=0
+
+    myAction = ActionQueue()
 
     pres_tabtab()
     
@@ -189,6 +198,20 @@ def key_loop():
     time.sleep(0.1)
         
     while running:
+        if pause_pressed:
+            pause_pressed=False
+            if on_pause:
+                print('일시중단해제')
+                on_pause=False
+            else:
+                print('일시중단')
+                on_pause=True
+               
+        if on_pause:
+            time.sleep(0.5)
+            continue
+
+    
         if f7_pressed and not is_heal_mode:        
             pres_tabtab()
             is_heal_mode=True
@@ -206,39 +229,61 @@ def key_loop():
                 is_tabtab_restore=False
                 pres_tabtab()
             crnt_tick=time.perf_counter()
-            if (crnt_tick-heal_tick) > 1.0:
-                heal_tick=crnt_tick
+            if (crnt_tick-action_tick) > 1:
+                action_tick=crnt_tick
                 action_count=0
-                heal_mode_cnt = heal_mode_cnt+1
-            
-            if action_count < 6:
-                my_action(current_mode)(action_count)
+            #금강
+            if GUMGANG_INTERVAL and (crnt_tick-diamond_tick) >= GUMGANG_INTERVAL:
+                diamond_tick = crnt_tick
+                myAction.add(_action_diamond)
+                myAction.add(_action_diamond)
                 
-                if action_count==0:
-                    #금강
-                    if GUMGANG_INTERVAL and (crnt_tick-diamond_tick) >= GUMGANG_INTERVAL:
-                        diamond_tick = crnt_tick
-                        current_mode = "diamond"                        
-                    #보무걸기
-                    elif SHIELD_PROTECT_INTERVAL and (crnt_tick-protected_tick) >= SHIELD_PROTECT_INTERVAL:
-                        protected_tick = crnt_tick
-                        current_mode = "protect"
-                    #희원
-                    elif _SP_HEAL_INTERVAL and (crnt_tick-super_heal_tick) >= _SP_HEAL_INTERVAL:
-                        super_heal_tick = crnt_tick
-                        current_mode = "spheal"
-                    #희원 준비
-                    elif _SP_HEAL_INTERVAL and (crnt_tick-super_heal_tick) >= (_SP_HEAL_INTERVAL-2):
-                        current_mode = "mpheal"
-                    #공증 + 힐
-                    elif MP_REFILL_FREQ and MP_REFILL_FREQ < heal_mode_cnt:
-                        current_mode = "mpheal"
-                        heal_mode_cnt=0
-                    else:
-                        heal_mode_cnt = heal_mode_cnt+1
-                        current_mode = "heal"
-                    
+            #보무걸기
+            if SHIELD_PROTECT_INTERVAL and (crnt_tick-protected_tick) >= SHIELD_PROTECT_INTERVAL:
+                protected_tick = crnt_tick
+                myAction.add(_action_shield)
+                myAction.add(_action_protect)
+                
+            #희원
+            if BH_HEAL_INTERVAL and (crnt_tick-bh_heal_tick) >= BH_HEAL_INTERVAL:
+                bh_heal_tick = crnt_tick
+                myAction.add(_action_bh_heal)
+                myAction.add(_action_mp_refill)
+                myAction.add(_action_mp_refill)
+                bh_ready_flag=False
+            
+            #희원준비
+            if BH_HEAL_INTERVAL and (crnt_tick-bh_heal_tick) >= (BH_HEAL_INTERVAL-2) and not bh_ready_flag:
+                myAction.add(_action_mp_refill)
+                myAction.add(_action_mp_refill)
+                myAction.add(_action_mp_refill)
+                bh_ready_flag = True
+            
+            #희원 첨
+            if BH2_HEAL_INTERVAL and (crnt_tick-bh2_heal_tick) >= BH2_HEAL_INTERVAL and ((crnt_tick-bh_heal_tick) > BH_GAP):
+                bh2_heal_tick = crnt_tick
+                myAction.add(_action_bh2_heal)
+                myAction.add(_action_mp_refill)
+                myAction.add(_action_mp_refill)
+                bh2_ready_flag=False
+            
+            #희원 첨 준비
+            if BH2_HEAL_INTERVAL and (crnt_tick-bh2_heal_tick) >= (BH2_HEAL_INTERVAL-2) and not bh2_ready_flag:
+                myAction.add(_action_mp_refill)
+                myAction.add(_action_mp_refill)
+                myAction.add(_action_mp_refill)
+                bh2_ready_flag = True
+            
+            #공증
+            if MP_REFILL_FREQ and (MP_REFILL_FREQ <= total_action_count):
+                myAction.add(_action_mp_refill)
+                total_action_count=0
+            
+            if action_count < 5:               
+                myAction.do()
+                time.sleep(DEFAULT_DELAY)                
                 action_count=action_count+1
+                total_action_count=total_action_count+1
                 
             if up_pressed:
                 press_key(0x26)
@@ -315,8 +360,6 @@ def key_loop():
             if is_heal_mode and not is_tabtab_restore:
                 is_tabtab_restore=True
             pres_tabtab()
-            if 3 < action_count:
-                time.sleep(0.2)
             press_valid_key(KEY_MP_INJECTION)
             time.sleep(0.03)
             press_key(0x1B, 0.02)   # ESC 키 입력 (종료 X)
@@ -333,9 +376,9 @@ def key_loop():
             f1_pressed = False
         
         #격수부활
-        if f2_pressed:
+        if f11_pressed:
             pres_tabtab()      
-            press_key(0x30+KEY_REVIVE)  # 7
+            press_valid_key(KEY_REVIVE)  # 7
             time.sleep(0.05)
             press_key(0x30+KEY_HEAL)  # 3
             time.sleep(0.02)
@@ -346,17 +389,15 @@ def key_loop():
             press_key(0x30+KEY_HEAL)  # 3
             time.sleep(0.02)
             press_key(0x1B, 0.02)   # ESC 키 입력 (종료 X)
-            f2_pressed = False
+            f11_pressed = False
         
         #셀프부활
-        if f3_pressed:
+        if f2_pressed:
             if is_heal_mode and not is_tabtab_restore:
                 is_tabtab_restore=True
-            if 3 < action_count:
-                time.sleep(0.3)
             press_key(0x1B)  # ESC
             time.sleep(0.02)
-            press_key(0x30+KEY_REVIVE)  # 7
+            press_valid_key(KEY_REVIVE)  # 7
             time.sleep(0.04)
             press_key(0x24)  # HOME
             time.sleep(0.04)
@@ -373,13 +414,40 @@ def key_loop():
             press_key(0xD)
             time.sleep(0.03)
             press_key(0x1B, 0.02)   # ESC 키 입력 (종료 X)
+            f2_pressed = False
+            
+        #셀프힐
+        if f3_pressed:
+            if is_heal_mode and not is_tabtab_restore:
+                is_tabtab_restore=True
+
+            press_key(0x1B)  # ESC
+            time.sleep(0.02)
+            press_key(0x30+KEY_HEAL)
+            time.sleep(0.03)
+            press_key(0x24)  # HOME
+            time.sleep(0.03)
+            press_key(0xD)
+            time.sleep(0.03)
+            press_key(0x30+KEY_HEAL)
+            time.sleep(0.03)
+            press_key(0xD)
+            time.sleep(0.03)
+            press_key(0x1B, 0.02)   # ESC 키 입력 (종료 X)
             f3_pressed = False
             
+        #템먹기
+        if eat_pressed:
+            press_key(0xBC, 0.02, win32con.VK_SHIFT)  # Shift + ',' 입력
+            eat_pressed=False
         time.sleep(0.02)  # 20ms 주기로 상태 확인
-
 
 #################
 def on_esc_press(event):
+    global is_heal_mode
+    is_heal_mode=False
+    
+def on_tab_press(event):
     global is_heal_mode
     is_heal_mode=False
 
@@ -438,11 +506,15 @@ def on_f8_press(event):
 def on_f9_press(event):
     global f9_pressed
     f9_pressed = True
-
+    
+def on_f11_press(event):
+    global f11_pressed
+    f11_pressed = True
 
 def on_f12_press(event):
     global running
     running = False  # 프로그램 종료
+    time.sleep(0.5)
 
    
 def on_down_press(event):
@@ -476,8 +548,29 @@ def on_left_press(event):
 def on_left_release(event):
     global left_pressed
     left_pressed = False 
+        
+def on_grave_press(event):
+    global grave_pressed
+    grave_pressed = True
+
+def on_grave_release(event):
+    global grave_pressed
+    grave_pressed = False
+
+def on_pause_press(event):
+    global pause_pressed
+    pause_pressed = True
+    
+def on_eat_press(event):
+    global eat_pressed
+    eat_pressed=True
 
 keyboard.on_press_key("esc", on_esc_press)
+keyboard.on_press_key("tab", on_tab_press)
+keyboard.on_press_key("`", on_grave_press,  suppress=True)
+keyboard.on_release_key("`", on_grave_release,  suppress=True)
+keyboard.on_press_key("pause", on_pause_press,  suppress=True)
+keyboard.on_press_key(",",on_eat_press, suppress=True)
 
 keyboard.on_press_key("up", on_up_press)
 keyboard.on_release_key("up", on_up_release)
@@ -506,6 +599,8 @@ keyboard.on_press_key("f7", on_f7_press,  suppress=True)
 keyboard.on_press_key("f8", on_f8_press,  suppress=True)
 keyboard.on_press_key("f9", on_f9_press,  suppress=True)
 
+keyboard.on_press_key("f11", on_f11_press,  suppress=True)
+
 
 #keyboard.block_key("f12")
 #keyboard.add_hotkey("f12", on_f12_press,  suppress=False)  # F12를 누르면 종료
@@ -516,4 +611,5 @@ thread = threading.Thread(target=key_loop, daemon=True)
 thread.start()
 
 
-keyboard.wait("f12")
+while running:
+    time.sleep(1)
